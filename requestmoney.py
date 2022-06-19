@@ -9,12 +9,28 @@ LOG_DEBUG_FORMAT = "[%(threadName)s-%(filename)s-%(funcName)s-%(lineno)s | %(lev
 
 log = logging.getLogger(__name__)
 
+def print_debug(request_object, show_request_body=False, show_response_body=False):
+    print()
+    print(request_object.request.method + " " + request_object.request.url)
+    #print(request_object.request.headers)
+    for k,v in request_object.request.headers.items():
+        print(k + ": " + v)
+    
+    if show_request_body:
+        print(request_object.request.body)
+
+    print("\n")
+    print(request_object.status_code)
+    print("")
+    print(request_object.headers)
+
 def save_progress(x, y, **kwargs):
 
     with open(kwargs['progress'],'w') as fd:
         progress_line = f"{x} {y}"
         log.debug(f"Saving {x} {y}")
         fd.write(progress_line)
+
 
 
 def run(args, **kwargs):
@@ -34,6 +50,7 @@ def run(args, **kwargs):
 
     my_session = 0
     target_domain = "https://venmo.com"
+    account_target_domain = "https://account.venmo.com"
     test_domain = "http://127.0.0.1"
     '''
     Log in with user creds
@@ -55,7 +72,7 @@ def run(args, **kwargs):
         #pprint.pprint(r.headers)
 
         # Set Content-Type header for the login POST request
-        #my_session.headers["Content-Type"] = "application/x-www-form-urlencoded"
+        my_session.headers["Content-Type"] = "application/x-www-form-urlencoded"
 
         # Send login POST
         login_data = f'return_json=true&password={kwargs["password"]}&phoneEmailUsername={kwargs["username"]}'
@@ -63,17 +80,51 @@ def run(args, **kwargs):
 
         # Handle 2F if present
         if r.status_code == 401:
-            pass
+            
+            #strip content length headers
+            my_session.headers.pop("Content-Type")
+
+            # send request for the 2F page
+            r = my_session.get(
+                account_target_domain + 
+                f"/account/mfa/code-prompt?k={r.headers.get('Venmo-Otp-Secret')}" +
+                "&next=%2Faccount%2Flogout"
+            )
+
+            # extract the Csrf token
+            left = r.text.find("csrfToken") + 12
+            right = r.text.find("\"",left)
+
+            csrf_token = r.text[left:right]
+
+            print(csrf_token)
+
+            # send the POST specifying 2F type (i.e sms)
+            my_session.headers["Content-Type"] = "application/json"
+
+            data = {
+                "via":"sms"
+            }
+
+            r = my_session.post(
+                account_target_domain + "/api/account/mfa/token",
+                json=data
+            )
+
+            #print_debug(r)
+            
+            
+
         elif r.status_code != 200:
             log.error("In response to login - Bad status code: %d" %(r.status_code))
             assert False, "Bad status code"
 
-        print("Logged in successfully!")
+        #print("Logged in successfully!")
         
-        print("\n\n")
-        print(r.status_code)
-        pprint.pprint(r.request.headers)
-        print(r.text)
+        #print("\n\n")
+        #print(r.status_code)
+        #pprint.pprint(r.request.headers)
+        #print(r.text)
 
     except AssertionError as e:
         #pass Assertion back to main
