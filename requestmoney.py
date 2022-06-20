@@ -23,6 +23,9 @@ def print_debug(request_object, show_request_body=False, show_response_body=Fals
     print(request_object.status_code)
     print("")
     print(request_object.headers)
+    print()
+    if show_response_body:
+        print(request_object.text)
 
 def save_progress(x, y, **kwargs):
 
@@ -52,6 +55,7 @@ def run(args, **kwargs):
     target_domain = "https://venmo.com"
     account_target_domain = "https://account.venmo.com"
     test_domain = "http://127.0.0.1"
+    venmo_otp_secret = ''
     '''
     Log in with user creds
     '''
@@ -59,6 +63,7 @@ def run(args, **kwargs):
         # create new session object
         my_session = requests.Session()
 
+        
         # create and add Chrome user agent header (Venmo requires a valid browser)
         headers = {
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Safari/537.36',
@@ -84,12 +89,20 @@ def run(args, **kwargs):
             #strip content length headers
             my_session.headers.pop("Content-Type")
 
+            # save secret
+            venmo_otp_secret = r.headers.get('Venmo-Otp-Secret')
+
             # send request for the 2F page
             r = my_session.get(
                 account_target_domain + 
                 f"/account/mfa/code-prompt?k={r.headers.get('Venmo-Otp-Secret')}" +
                 "&next=%2Faccount%2Flogout"
             )
+
+            # extract the _next data URL
+            left = r.text.find("buildId") + 10
+            right = r.text.find("\"", left)
+            build_ID = r.text[left:right]
 
             # extract the Csrf token
             left = r.text.find("csrfToken") + 12
@@ -100,7 +113,10 @@ def run(args, **kwargs):
             print(csrf_token)
 
             # send the POST specifying 2F type (i.e sms)
-            my_session.headers["Content-Type"] = "application/json"
+            my_session.headers["Content-Type"]      = "application/json"
+            my_session.headers["Csrf-Token"]        = csrf_token
+            my_session.headers["Xsrf-Token"]        = csrf_token
+            my_session.headers["Venmo-Otp-Secret"]  = venmo_otp_secret
 
             data = {
                 "via":"sms"
@@ -111,7 +127,24 @@ def run(args, **kwargs):
                 json=data
             )
 
-            #print_debug(r)
+            print_debug(r,show_response_body=True)
+
+            two_factor_code = input("Enter 2F code: ")
+
+            data = {
+                "code":f"\"{two_factor_code}\""
+            }
+
+            #print(r.text)
+
+            # send the GET for the page to enter the 2F code
+            #r = my_session.get()
+
+
+            # send the POST to send the 2F code
+            #r = my_session.post(account_target_domain + "/api/account/mfa/sign-in", json=data)
+
+            
             
             
 
