@@ -1,0 +1,5 @@
+
+
+For the actual login (regardless of 2F), you need a v_id and an srf cookie. These are obtained by accessing venmo.com/account/sign-in
+
+You need an additional cookie if 2F is already enabled. This MUST be recorded, as you can't log in with 2F again if a 2F code has already been issued

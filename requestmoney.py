@@ -56,6 +56,7 @@ def run(args, **kwargs):
     account_target_domain = "https://account.venmo.com"
     test_domain = "http://127.0.0.1"
     venmo_otp_secret = ''
+
     '''
     Log in with user creds
     '''
@@ -79,9 +80,13 @@ def run(args, **kwargs):
         # Set Content-Type header for the login POST request
         my_session.headers["Content-Type"] = "application/x-www-form-urlencoded"
 
+        #dmy_session.headers["api_access_token"]="2092e77039afe0a66ad3e7519b8c0f4e67efe880fe10c97307e02b53d9e70613"
+
         # Send login POST
         login_data = f'return_json=true&password={kwargs["password"]}&phoneEmailUsername={kwargs["username"]}'
         r = my_session.post(target_domain + "/login",data=login_data)
+
+        print_debug(r,show_request_body=True)
 
         # Handle 2F if present
         if r.status_code == 401:
@@ -122,42 +127,37 @@ def run(args, **kwargs):
                 "via":"sms"
             }
 
+            
             r = my_session.post(
                 account_target_domain + "/api/account/mfa/token",
                 json=data
             )
-
-            print_debug(r,show_response_body=True)
-
-            two_factor_code = input("Enter 2F code: ")
-
-            data = {
-                "code":f"\"{two_factor_code}\""
-            }
-
-            #print(r.text)
+            
 
             # send the GET for the page to enter the 2F code
-            #r = my_session.get()
+            r = my_session.get(
+                account_target_domain +
+                f"/_next/data/{build_ID}/en/account/mfa/sms.json" + 
+                f"?k={venmo_otp_secret}" +
+                "&next=%2F&smsOrEmail=sms",
 
+            )
 
+            two_factor_code = input("Enter 2F code: ").strip()
+
+            data = {
+                "code":two_factor_code
+            }
+            print(two_factor_code)
+            
             # send the POST to send the 2F code
-            #r = my_session.post(account_target_domain + "/api/account/mfa/sign-in", json=data)
-
             
-            
-            
+            r = my_session.post(account_target_domain + "/api/account/mfa/sign-in", json=data)
 
         elif r.status_code != 200:
             log.error("In response to login - Bad status code: %d" %(r.status_code))
             assert False, "Bad status code"
 
-        #print("Logged in successfully!")
-        
-        #print("\n\n")
-        #print(r.status_code)
-        #pprint.pprint(r.request.headers)
-        #print(r.text)
 
     except AssertionError as e:
         #pass Assertion back to main
@@ -165,7 +165,53 @@ def run(args, **kwargs):
     except Exception as e:
         log.error("Unknown exception in run()")
         log.exception(e)
+    
+
+    # get the payment CSR
+    r = my_session.get(
+    account_target_domain +
+        f"/_next/data/{build_ID}/en/pay.json"
+    )
+
+    # extract the Csrf token
+    left = r.text.find("csrfToken") + 12
+    right = r.text.find("\"",left)
+
+    csrf_token = r.text[left:right]
+
+    my_session.headers["Xsrf-Token"] = csrf_token
+    my_session.headers["Csrf-Token"] = csrf_token
+    my_session.headers["Content-Type"] = "application/json"
+
+    #try request Brad
+    target_user_ID = "1880046100807680115"
+    amountInCents = 100
+    audience = "public"
+    note = "automated_test_"
+    type = "request"
+
+    for i in range(100):
         
+        data = {
+            "targetUserDetails":{
+                "userId":target_user_ID
+            },
+            "amountInCents": amountInCents,
+            "audience": audience,
+            "note": note + str(i),
+            "type": type
+
+        }
+
+        r = my_session.post(
+            account_target_domain +
+            "/api/payments",
+            json=data
+        )
+
+        print_debug(r,show_request_body=True, show_response_body=True)
+
+        time.sleep(0.2)
 
     '''
     The pay or request button on a person's page -> account.venmo.com/pay?recipients=<user_name_here>
